@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Extreme Solar System - ระบบสุริยะสุดโหด</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Prompt:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: none; /* Prevent scrolling while dragging */
+        }
+        
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            overflow: hidden; /* Lock viewport */
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+        /* Background Canvas */
+        #spaceCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Glassmorphism UI */
+        .glass {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-btn {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            transition: all 0.2s;
+        }
+        .glass-btn:hover:not(:disabled) {
+            background: rgba(56, 189, 248, 0.2);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+        }
+        .glass-btn:active:not(:disabled) { transform: scale(0.95); }
+
+        /* Neon Text Glow */
+        .neon-text {
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.7), 0 0 20px rgba(56, 189, 248, 0.5);
+        }
+        .neon-text-danger {
+            text-shadow: 0 0 10px rgba(244, 63, 94, 0.7), 0 0 20px rgba(244, 63, 94, 0.5);
+        }
+
+        /* Drop Zones (Planets) */
+        .drop-zone {
+            transition: all 0.3s ease;
+            border: 2px dashed rgba(56, 189, 248, 0.3);
+        }
+        .drop-zone.active {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: #38bdf8;
+            box-shadow: inset 0 0 20px rgba(56, 189, 248, 0.3);
+            transform: scale(1.05);
+        }
+        .drop-zone.success {
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.1);
+            box-shadow: 0 0 15px rgba(74, 222, 128, 0.4);
+        }
+
+        /* Draggable Items (Fact Cards) */
+        .drag-item {
+            cursor: grab;
+            transition: transform 0.1s;
+            touch-action: none;
+        }
+        .drag-item:active { cursor: grabbing; }
+        
+        .drag-item.hidden-original {
+            opacity: 0 !important;
+            pointer-events: none;
+        }
+
+        /* The flying clone used during drag */
+        .drag-clone {
+            position: fixed;
+            z-index: 9999;
+            pointer-events: none; /* Must be none so elementFromPoint works underneath */
+            transform: scale(1.05) rotate(2deg);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px rgba(56, 189, 248, 0.6);
+            opacity: 0.9;
+        }
+
+        /* Animations */
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .animate-shake { animation: shake 0.3s ease-in-out; }
+
+        /* Main Game Layout constraints for mobile */
+        #gameArea {
+            height: calc(100vh - 80px); /* Subtract header height */
+            display: flex;
+            flex-direction: column;
+        }
+        #planetsContainer {
+            flex: 1; /* Takes available space */
+            overflow-y: auto;
+        }
+        #factsContainer {
+            height: 35%; /* Bottom portion for facts */
+            min-height: 200px;
+            background: rgba(2, 6, 23, 0.9);
+            border-top: 1px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+            padding: 10px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="spaceCanvas"></canvas>
+
+    <header class="relative z-10 glass h-[70px] flex items-center justify-between px-4 sm:px-6 w-full shrink-0 border-b border-sky-900/50">
+        <div class="flex items-center gap-2 sm:gap-3">
+            <div class="w-10 h-10 rounded-full bg-sky-900/50 border border-sky-500/50 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(56,189,248,0.3)]">
+                👨‍🚀
+            </div>
+            <div>
+                <h1 class="text-sm sm:text-base font-bold font-orbitron text-sky-400 tracking-wider hidden sm:block">EXTREME SOLAR SYSTEM</h1>
+                <h1 class="text-sm font-bold font-orbitron text-sky-400 tracking-wider sm:hidden">ESS PUZZLE</h1>
+                <div class="text-[10px] text-slate-400" id="lblHighscore">Highscore: <span id="valHighscore" class="text-amber-400">0</span></div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3 sm:gap-6">
+            <!-- Stats -->
+            <div class="flex gap-4 bg-slate-900/80 px-4 py-2 rounded-xl border border-slate-700">
+                <div class="flex flex-col items-center leading-tight">
+                    <span class="text-[10px] text-slate-400" id="lblScore">Score</span>
+                    <span id="valScore" class="font-orbitron font-bold text-amber-400 text-sm sm:text-base">0</span>
+                </div>
+                <div class="w-px bg-slate-700"></div>
+                <div class="flex flex-col items-center leading-tight">
+                    <span class="text-[10px] text-slate-400" id="lblTime">Time</span>
+                    <span id="valTime" class="font-orbitron font-bold text-sky-400 text-sm sm:text-base">00:00</span>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex gap-2">
+                <button id="btnLang" class="glass-btn w-9 h-9 rounded-lg text-xs font-bold text-sky-300">TH</button>
+                <button id="btnSound" class="glass-btn w-9 h-9 rounded-lg text-sm">🔊</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="relative z-10 w-full flex-1 w-full max-w-5xl mx-auto overflow-hidden">
+        
+        <!-- Screen 1: Welcome -->
+        <section id="screenWelcome" class="absolute inset-0 flex flex-col items-center justify-center p-6 space-y-8 animate-pop">
+            <div class="text-center space-y-2">
+                <div class="text-6xl mb-4 animate-pulse">🌌</div>
+                <h2 class="text-3xl sm:text-5xl font-black font-orbitron neon-text text-white tracking-widest uppercase" id="txtTitle">ระบบสุริยะสุดโหด</h2>
+                <p class="text-sky-200/80 text-sm sm:text-base max-w-md mx-auto" id="txtSubtitle">
+                    ลากข้อมูลทางดาราศาสตร์เชิงลึกไปใส่ดาวเคราะห์ที่ถูกต้องเพื่อทดสอบความรู้ระดับ ม.ปลาย ของคุณ!
+                </p>
+            </div>
+            
+            <div class="glass p-6 rounded-2xl w-full max-w-sm space-y-4 text-center">
+                <p class="text-xs text-slate-300" id="txtHowTo">
+                    👆 <strong>วิธีเล่น:</strong> ลาก (Drag) การ์ดข้อความด้านล่าง ไปวาง (Drop) บนดวงดาวที่ถูกต้อง ทำเวลาให้ดีที่สุด!
+                </p>
+                <button id="btnStart" class="w-full py-4 bg-gradient-to-r from-sky-600 to-indigo-700 hover:from-sky-500 hover:to-indigo-600 rounded-xl font-bold text-lg shadow-[0_0_20px_rgba(56,189,248,0.4)] transition-all transform hover:scale-105 active:scale-95 text-white">
+                    🚀 <span id="btnStartText">เริ่มทำภารกิจ</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Screen 2: Game Area -->
+        <section id="screenGame" class="absolute inset-0 hidden flex flex-col">
+            
+            <!-- Level Indicator -->
+            <div class="w-full text-center py-2 bg-slate-900/60 border-b border-slate-800">
+                <span class="text-xs font-bold text-indigo-400 font-orbitron" id="lblLevel">LEVEL 1</span>: 
+                <span class="text-sm font-semibold text-slate-200" id="txtLevelTitle">Extreme Conditions</span>
+            </div>
+
+            <!-- Top: Planets Drop Zones -->
+            <div id="planetsContainer" class="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 content-start">
+                <!-- Injected via JS -->
+            </div>
+
+            <!-- Bottom: Facts Draggable Items -->
+            <div id="factsContainer" class="flex flex-wrap content-start gap-3 justify-center">
+                <!-- Injected via JS -->
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Modal: Level Complete / Game Over -->
+    <div id="modalOverlay" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="glass w-full max-w-md p-8 rounded-3xl text-center space-y-6 transform scale-95 transition-transform" id="modalBox">
+            
+            <div id="modalIcon" class="text-6xl drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">🏆</div>
+            
+            <div>
+                <h3 id="modalTitle" class="text-3xl font-black font-orbitron text-white neon-text">ภารกิจสำเร็จ!</h3>
+                <p id="modalDesc" class="text-sky-200 text-sm mt-2">คุณผ่านด่านเรียบร้อยแล้ว</p>
+            </div>
+
+            <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-700 flex justify-around">
+                <div>
+                    <div class="text-[10px] text-slate-400" id="lblModalScore">คะแนนด่านนี้</div>
+                    <div class="text-2xl font-bold font-orbitron text-amber-400" id="modalScoreVal">+500</div>
+                </div>
+            </div>
+
+            <button id="btnModalAction" class="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl shadow-[0_0_15px_rgba(56,189,248,0.4)]">
+                ด่านต่อไป ⏩
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- TRANSLATIONS ---
+        const DICT = {
+            TH: {
+                txtTitle: "ระบบสุริยะสุดโหด",
+                txtSubtitle: "ลากข้อมูลเชิงลึกไปใส่ดาวเคราะห์ที่ถูกต้องเพื่อทดสอบความรู้ดาราศาสตร์ระดับ ม.ปลาย ของคุณ!",
+                txtHowTo: "👆 <strong>วิธีเล่น:</strong> ลาก (Drag) การ์ดข้อความด้านล่าง ไปวาง (Drop) บนดวงดาวที่เกี่ยวข้องก่อนหมดเวลา!",
+                btnStartText: "เริ่มภารกิจ",
+                lblScore: "คะแนน",
+                lblTime: "เวลา",
+                lblHighscore: "สถิติสูงสุด: ",
+                lblLevel: "ด่าน",
+                level1Title: "สภาวะสุดขั้วทางกายภาพ",
+                level2Title: "ดวงจันทร์และยานสำรวจ",
+                level3Title: "วงโคจรและองค์ประกอบ",
+                successTitle: "สำเร็จ!",
+                successDesc: "ระบบอัปโหลดข้อมูลเสร็จสิ้น",
+                timeoutTitle: "หมดเวลา!",
+                timeoutDesc: "ระบบล้มเหลว ขาดการติดต่อ",
+                victoryTitle: "จบหลักสูตร!",
+                victoryDesc: "คุณคือผู้เชี่ยวชาญระบบสุริยะตัวจริง!",
+                btnNext: "ด่านต่อไป ⏩",
+                btnRetry: "ลองใหม่ 🔄",
+                btnHome: "กลับหน้าแรก 🏠",
+                lblModalScore: "คะแนนรวม"
+            },
+            EN: {
+                txtTitle: "EXTREME SOLAR SYSTEM",
+                txtSubtitle: "Drag advanced astronomical facts to the correct planets to test your high school knowledge!",
+                txtHowTo: "👆 <strong>How to play:</strong> Drag the fact cards from the bottom and drop them onto the related planet before time runs out!",
+                btnStartText: "START MISSION",
+                lblScore: "SCORE",
+                lblTime: "TIME",
+                lblHighscore: "Highscore: ",
+                lblLevel: "LEVEL",
+                level1Title: "Extreme Physical Conditions",
+                level2Title: "Moons & Space Probes",
+                level3Title: "Orbits & Composition",
+                successTitle: "CLEARED!",
+                successDesc: "Data upload complete.",
+                timeoutTitle: "TIME UP!",
+                timeoutDesc: "Mission failed. Connection lost.",
+                victoryTitle: "MISSION COMPLETE!",
+                victoryDesc: "You are a true Solar System Expert!",
+                btnNext: "Next Level ⏩",
+                btnRetry: "Retry 🔄",
+                btnHome: "Main Menu 🏠",
+                lblModalScore: "Total Score"
+            }
+        };
+
+        // --- GAME DATA (High School Level) ---
+        const LEVELS = [
+            {
+                id: 1,
+                titleTH: "สภาวะสุดขั้วทางกายภาพ",
+                titleEN: "Extreme Physical Conditions",
+                time: 60, // seconds
+                planets: [
+                    { id: "venus", icon: "🪐", color: "from-orange-500 to-amber-700", nameTH: "ดาวศุกร์ (Venus)", nameEN: "Venus" },
+                    { id: "uranus", icon: "🧊", color: "from-cyan-400 to-blue-600", nameTH: "ดาวยูเรนัส (Uranus)", nameEN: "Uranus" },
+                    { id: "mars", icon: "🔴", color: "from-red-500 to-rose-900", nameTH: "ดาวอังคาร (Mars)", nameEN: "Mars" },
+                    { id: "jupiter", icon: "🌪️", color: "from-amber-600 to-orange-900", nameTH: "ดาวพฤหัสฯ (Jupiter)", nameEN: "Jupiter" }
+                ],
+                facts: [
+                    { id: "f1", target: "venus", textTH: "อุณหภูมิพื้นผิวร้อนที่สุด ฝนตกเป็นกรดซัลฟิวริก", textEN: "Hottest surface temp, rains sulfuric acid" },
+                    { id: "f2", target: "uranus", textTH: "แกนหมุนเอียง 98 องศา ทำให้ดูเหมือนกลิ้งไปตามวงโคจร", textEN: "Axial tilt of 98°, rotates on its side" },
+                    { id: "f3", target: "mars", textTH: "ที่ตั้งของ Olympus Mons ภูเขาไฟที่ใหญ่ที่สุดในระบบสุริยะ", textEN: "Home to Olympus Mons, the largest volcano" },
+                    { id: "f4", target: "jupiter", textTH: "มีพายุหมุนขนาดยักษ์ 'จุดแดงใหญ่' (Great Red Spot)", textEN: "Hosts the massive storm 'Great Red Spot'" }
+                ]
+            },
+            {
+                id: 2,
+                titleTH: "ดวงจันทร์และยานสำรวจ",
+                titleEN: "Moons & Space Probes",
+                time: 60,
+                planets: [
+                    { id: "saturn", icon: "🪐", color: "from-yellow-500 to-amber-700", nameTH: "ดาวเสาร์ (Saturn)", nameEN: "Saturn" },
+                    { id: "neptune", icon: "🌊", color: "from-blue-600 to-indigo-900", nameTH: "ดาวเนปจูน (Neptune)", nameEN: "Neptune" },
+                    { id: "mars", icon: "🔴", color: "from-red-500 to-rose-900", nameTH: "ดาวอังคาร (Mars)", nameEN: "Mars" },
+                    { id: "mercury", icon: "🪨", color: "from-slate-400 to-gray-700", nameTH: "ดาวพุธ (Mercury)", nameEN: "Mercury" }
+                ],
+                facts: [
+                    { id: "f5", target: "saturn", textTH: "ดวงจันทร์ไททัน (Titan) มีชั้นบรรยากาศหนาแน่นและทะเลสาบมีเทน", textEN: "Moon Titan has a thick atmosphere & methane lakes" },
+                    { id: "f6", target: "neptune", textTH: "ดวงจันทร์ไทรทัน (Triton) โคจรสวนทางกับการหมุนของดาวแม่", textEN: "Moon Triton has a retrograde orbit" },
+                    { id: "f7", target: "mars", textTH: "มีดวงจันทร์ขนาดเล็ก 2 ดวง คือ โฟบอส (Phobos) และ ดีมอส (Deimos)", textEN: "Has 2 tiny moons: Phobos and Deimos" },
+                    { id: "f8", target: "mercury", textTH: "ยาน MESSENGER โคจรสำรวจพบน้ำแข็งที่ขั้วดาว", textEN: "MESSENGER probe found water ice at its poles" }
+                ]
+            }
+        ];
+
+        // --- GLOBAL STATE ---
+        let state = {
+            lang: localStorage.getItem('ess_lang') || 'TH',
+            sound: true,
+            highScore: parseInt(localStorage.getItem('ess_highscore')) || 0,
+            currentLevel: 0,
+            score: 0,
+            timeLeft: 0,
+            timerId: null,
+            correctDrops: 0
+        };
+
+        // --- AUDIO ENGINE (Web Audio API) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(freq, type, duration, vol=0.1) {
+            if(!state.sound || audioCtx.state === 'suspended') return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        const sfx = {
+            start: () => { playTone(440, 'sine', 0.1); setTimeout(()=>playTone(660, 'sine', 0.2), 100); },
+            grab: () => playTone(300, 'triangle', 0.1, 0.05),
+            dropOk: () => { playTone(600, 'sine', 0.1); setTimeout(()=>playTone(800, 'sine', 0.2), 100); },
+            dropBad: () => { playTone(150, 'sawtooth', 0.2, 0.2); },
+            win: () => { [523.25, 659.25, 783.99, 1046.50].forEach((f, i) => setTimeout(()=>playTone(f, 'sine', 0.3), i*150)); },
+            lose: () => { playTone(200, 'sawtooth', 0.5); setTimeout(()=>playTone(150, 'sawtooth', 0.6), 400); }
+        };
+
+        // Unlock audio on first interaction
+        document.body.addEventListener('click', () => {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+        }, {once:true});
+
+        // --- BACKGROUND CANVAS ---
+        const cvs = document.getElementById('spaceCanvas');
+        const ctx = cvs.getContext('2d');
+        let stars = [];
+        function initStars() {
+            cvs.width = window.innerWidth;
+            cvs.height = window.innerHeight;
+            stars = Array.from({length: 150}, () => ({
+                x: Math.random() * cvs.width,
+                y: Math.random() * cvs.height,
+                r: Math.random() * 1.5,
+                a: Math.random(),
+                da: (Math.random() * 0.02) + 0.005
+            }));
+        }
+        function drawStars() {
+            ctx.clearRect(0,0,cvs.width,cvs.height);
+            stars.forEach(s => {
+                s.a += s.da;
+                if(s.a > 1 || s.a < 0) s.da *= -1;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+                ctx.fillStyle = `rgba(255,255,255,${Math.abs(s.a)})`;
+                ctx.fill();
+            });
+            requestAnimationFrame(drawStars);
+        }
+        window.addEventListener('resize', initStars);
+        initStars();
+        drawStars();
+
+        // --- DOM ELEMENTS ---
+        const ui = {
+            langBtn: document.getElementById('btnLang'),
+            soundBtn: document.getElementById('btnSound'),
+            score: document.getElementById('valScore'),
+            time: document.getElementById('valTime'),
+            highscore: document.getElementById('valHighscore'),
+            screens: {
+                welcome: document.getElementById('screenWelcome'),
+                game: document.getElementById('screenGame')
+            },
+            modal: {
+                overlay: document.getElementById('modalOverlay'),
+                box: document.getElementById('modalBox'),
+                icon: document.getElementById('modalIcon'),
+                title: document.getElementById('modalTitle'),
+                desc: document.getElementById('modalDesc'),
+                scoreVal: document.getElementById('modalScoreVal'),
+                actionBtn: document.getElementById('btnModalAction')
+            },
+            containers: {
+                planets: document.getElementById('planetsContainer'),
+                facts: document.getElementById('factsContainer')
+            }
+        };
+
+        // --- LOGIC & RENDERING ---
+
+        function applyLang() {
+            const d = DICT[state.lang];
+            ui.langBtn.textContent = state.lang;
+            document.querySelectorAll('[id]').forEach(el => {
+                if(d[el.id]) el.innerHTML = d[el.id];
+            });
+            
+            // Re-render level info if in game
+            if(!ui.screens.game.classList.contains('hidden')) {
+                const lvl = LEVELS[state.currentLevel];
+                document.getElementById('txtLevelTitle').textContent = state.lang === 'TH' ? lvl.titleTH : lvl.titleEN;
+                
+                // Re-render names inside containers without resetting logic
+                document.querySelectorAll('.planet-name').forEach(el => {
+                    const id = el.dataset.id;
+                    const p = lvl.planets.find(x => x.id === id);
+                    if(p) el.textContent = state.lang === 'TH' ? p.nameTH : p.nameEN;
+                });
+                document.querySelectorAll('.fact-text').forEach(el => {
+                    const id = el.dataset.id;
+                    const f = lvl.facts.find(x => x.id === id);
+                    if(f) el.textContent = state.lang === 'TH' ? f.textTH : f.textEN;
+                });
+            }
+        }
+
+        function updateStats() {
+            ui.score.textContent = state.score;
+            ui.highscore.textContent = state.highScore;
+            
+            const m = Math.floor(state.timeLeft / 60).toString().padStart(2, '0');
+            const s = (state.timeLeft % 60).toString().padStart(2, '0');
+            ui.time.textContent = `${m}:${s}`;
+            
+            if(state.timeLeft <= 10 && state.timeLeft > 0) {
+                ui.time.classList.add('text-red-400', 'animate-pulse');
+                ui.time.classList.remove('text-sky-400');
+            } else {
+                ui.time.classList.remove('text-red-400', 'animate-pulse');
+                ui.time.classList.add('text-sky-400');
+            }
+        }
+
+        function formatTimeLeft(sec) {
+            return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`;
+        }
+
+        function startGame() {
+            sfx.start();
+            state.currentLevel = 0;
+            state.score = 0;
+            state.correctDrops = 0;
+            ui.screens.welcome.classList.add('hidden');
+            ui.screens.game.classList.remove('hidden');
+            loadLevel(0);
+        }
+
+        function loadLevel(index) {
+            const lvl = LEVELS[index];
+            state.timeLeft = lvl.time;
+            state.correctDrops = 0;
+            
+            document.getElementById('lblLevel').textContent = (state.lang === 'TH' ? "ด่าน " : "LEVEL ") + (index + 1);
+            document.getElementById('txtLevelTitle').textContent = state.lang === 'TH' ? lvl.titleTH : lvl.titleEN;
+
+            // Generate Planets (Drop Zones)
+            ui.containers.planets.innerHTML = '';
+            lvl.planets.forEach(p => {
+                const zone = document.createElement('div');
+                zone.className = `drop-zone flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-900/40 relative`;
+                zone.dataset.targetId = p.id;
+                zone.innerHTML = `
+                    <div class="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br ${p.color} flex items-center justify-center text-3xl sm:text-5xl shadow-[0_0_15px_rgba(0,0,0,0.5)] mb-2">
+                        ${p.icon}
+                    </div>
+                    <span class="planet-name text-[10px] sm:text-xs font-bold text-slate-300 text-center" data-id="${p.id}">
+                        ${state.lang === 'TH' ? p.nameTH : p.nameEN}
+                    </span>
+                    <div class="dropped-items w-full mt-2 space-y-1"></div>
+                `;
+                ui.containers.planets.appendChild(zone);
+            });
+
+            // Generate Facts (Draggables) - Shuffle them
+            ui.containers.facts.innerHTML = '';
+            const shuffledFacts = [...lvl.facts].sort(() => Math.random() - 0.5);
+            shuffledFacts.forEach(f => {
+                const card = document.createElement('div');
+                card.className = `drag-item bg-slate-800/80 border border-slate-600 p-3 rounded-xl shadow-lg w-full sm:w-[calc(50%-0.5rem)] text-xs sm:text-sm text-sky-100 relative`;
+                card.dataset.id = f.id;
+                card.dataset.target = f.target;
+                
+                // Content span
+                card.innerHTML = `<span class="fact-text pointer-events-none" data-id="${f.id}">${state.lang === 'TH' ? f.textTH : f.textEN}</span>`;
+                
+                // Add Pointer Events for Drag & Drop
+                card.addEventListener('pointerdown', handleDragStart);
+                
+                ui.containers.facts.appendChild(card);
+            });
+
+            updateStats();
+            clearInterval(state.timerId);
+            state.timerId = setInterval(() => {
+                state.timeLeft--;
+                updateStats();
+                if(state.timeLeft <= 0) {
+                    clearInterval(state.timerId);
+                    showModal('timeout');
+                }
+            }, 1000);
+        }
+
+        // --- CUSTOM DRAG & DROP ENGINE (Touch & Mouse Support) ---
+        let activeDragEl = null;
+        let flyingClone = null;
+        let offsetX = 0, offsetY = 0;
+        let currentDropZone = null;
+
+        function handleDragStart(e) {
+            if(e.button !== 0 && e.type !== 'touchstart' && e.pointerType !== 'touch' && e.pointerType !== 'mouse') return;
+            
+            const el = e.currentTarget;
+            activeDragEl = el;
+            
+            // Calculate offset to grab exact spot
+            const rect = el.getBoundingClientRect();
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+
+            // Create Visual Clone
+            flyingClone = el.cloneNode(true);
+            flyingClone.className = el.className.replace('drag-item', 'drag-clone');
+            flyingClone.style.width = `${rect.width}px`;
+            flyingClone.style.left = `${rect.left}px`;
+            flyingClone.style.top = `${rect.top}px`;
+            document.body.appendChild(flyingClone);
+
+            // Hide Original visually but keep layout space
+            el.classList.add('hidden-original');
+            
+            sfx.grab();
+
+            // Bind move and end events globally
+            document.addEventListener('pointermove', handleDragMove, {passive: false});
+            document.addEventListener('pointerup', handleDragEnd);
+            document.addEventListener('pointercancel', handleDragEnd);
+        }
+
+        function handleDragMove(e) {
+            if(!flyingClone) return;
+            e.preventDefault(); // Prevent touch scrolling
+
+            // Update clone position
+            const x = e.clientX - offsetX;
+            const y = e.clientY - offsetY;
+            flyingClone.style.left = `${x}px`;
+            flyingClone.style.top = `${y}px`;
+
+            // Detect Drop Zone underneath (using clone center point is more reliable)
+            const rect = flyingClone.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            // Temporarily hide clone so elementFromPoint sees what's beneath
+            flyingClone.style.display = 'none';
+            const elementBelow = document.elementFromPoint(centerX, centerY);
+            flyingClone.style.display = 'block';
+
+            const dropZoneBelow = elementBelow ? elementBelow.closest('.drop-zone') : null;
+
+            // Highlight Logic
+            if (currentDropZone && currentDropZone !== dropZoneBelow) {
+                currentDropZone.classList.remove('active');
+            }
+            if (dropZoneBelow) {
+                dropZoneBelow.classList.add('active');
+                currentDropZone = dropZoneBelow;
+            } else {
+                currentDropZone = null;
+            }
+        }
+
+        function handleDragEnd(e) {
+            if(!activeDragEl || !flyingClone) return;
+
+            document.removeEventListener('pointermove', handleDragMove);
+            document.removeEventListener('pointerup', handleDragEnd);
+            document.removeEventListener('pointercancel', handleDragEnd);
+
+            const targetPlanetId = activeDragEl.dataset.target;
+            
+            if (currentDropZone) {
+                currentDropZone.classList.remove('active');
+                
+                if (currentDropZone.dataset.targetId === targetPlanetId) {
+                    // CORRECT MATCH
+                    sfx.dropOk();
+                    currentDropZone.classList.add('success');
+                    setTimeout(() => currentDropZone.classList.remove('success'), 500);
+                    
+                    // Add Score
+                    const points = 100 + (state.timeLeft * 2); // Time bonus
+                    state.score += points;
+                    updateStats();
+                    
+                    // Move visual content into drop zone
+                    const droppedContainer = currentDropZone.querySelector('.dropped-items');
+                    const minifiedCard = document.createElement('div');
+                    minifiedCard.className = "bg-green-900/50 border border-green-500/50 rounded p-1 text-[9px] text-green-100 truncate animate-pop";
+                    minifiedCard.textContent = activeDragEl.textContent;
+                    droppedContainer.appendChild(minifiedCard);
+
+                    // Remove original elements
+                    activeDragEl.remove();
+                    flyingClone.remove();
+                    
+                    state.correctDrops++;
+                    checkLevelClear();
+
+                } else {
+                    // WRONG MATCH
+                    sfx.dropBad();
+                    currentDropZone.classList.add('animate-shake', 'border-red-500');
+                    setTimeout(() => currentDropZone.classList.remove('animate-shake', 'border-red-500'), 300);
+                    
+                    // Penalty
+                    state.timeLeft = Math.max(0, state.timeLeft - 5);
+                    updateStats();
+                    
+                    // Return clone
+                    returnCloneToOrigin();
+                }
+            } else {
+                // DROPPED IN VOID
+                returnCloneToOrigin();
+            }
+
+            activeDragEl = null;
+            flyingClone = null;
+            currentDropZone = null;
+        }
+
+        function returnCloneToOrigin() {
+            const clone = flyingClone; // Capture local ref
+            const original = activeDragEl;
+            
+            const rect = original.getBoundingClientRect();
+            clone.style.transition = 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+            clone.style.left = `${rect.left}px`;
+            clone.style.top = `${rect.top}px`;
+            clone.style.transform = 'scale(1) rotate(0deg)';
+            
+            setTimeout(() => {
+                if(clone && clone.parentNode) clone.remove();
+                if(original) original.classList.remove('hidden-original');
+            }, 300);
+        }
+
+        function checkLevelClear() {
+            const lvl = LEVELS[state.currentLevel];
+            if(state.correctDrops >= lvl.facts.length) {
+                clearInterval(state.timerId);
+                setTimeout(() => {
+                    const isLastLevel = state.currentLevel === LEVELS.length - 1;
+                    showModal(isLastLevel ? 'victory' : 'success');
+                }, 500);
+            }
+        }
+
+        // --- MODAL SYSTEM ---
+        function showModal(type) {
+            ui.modal.overlay.classList.remove('hidden');
+            setTimeout(() => ui.modal.box.classList.remove('scale-95'), 10);
+            
+            const d = DICT[state.lang];
+            ui.modal.scoreVal.textContent = state.score;
+
+            if(type === 'success') {
+                sfx.win();
+                ui.modal.icon.textContent = "🏆";
+                ui.modal.title.textContent = d.successTitle;
+                ui.modal.title.className = "text-3xl font-black font-orbitron neon-text text-green-400";
+                ui.modal.desc.textContent = d.successDesc;
+                ui.modal.actionBtn.textContent = d.btnNext;
+                ui.modal.actionBtn.onclick = () => { hideModal(); loadLevel(++state.currentLevel); };
+            } 
+            else if(type === 'timeout') {
+                sfx.lose();
+                ui.modal.icon.textContent = "☠️";
+                ui.modal.title.textContent = d.timeoutTitle;
+                ui.modal.title.className = "text-3xl font-black font-orbitron neon-text-danger text-rose-500";
+                ui.modal.desc.textContent = d.timeoutDesc;
+                ui.modal.actionBtn.textContent = d.btnRetry;
+                ui.modal.actionBtn.onclick = () => { hideModal(); loadLevel(state.currentLevel); }; // Retry current
+            }
+            else if(type === 'victory') {
+                sfx.win();
+                ui.modal.icon.textContent = "🎓";
+                ui.modal.title.textContent = d.victoryTitle;
+                ui.modal.title.className = "text-3xl font-black font-orbitron neon-text text-amber-400";
+                ui.modal.desc.textContent = d.victoryDesc;
+                ui.modal.actionBtn.textContent = d.btnHome;
+                
+                // Save Highscore
+                if(state.score > state.highScore) {
+                    state.highScore = state.score;
+                    localStorage.setItem('ess_highscore', state.highScore);
+                    ui.modal.desc.innerHTML += "<br><span class='text-amber-400 text-xs'>NEW HIGHSCORE!</span>";
+                }
+
+                ui.modal.actionBtn.onclick = () => { 
+                    hideModal(); 
+                    ui.screens.game.classList.add('hidden');
+                    ui.screens.welcome.classList.remove('hidden');
+                    updateStats();
+                };
+            }
+        }
+
+        function hideModal() {
+            ui.modal.box.classList.add('scale-95');
+            setTimeout(() => ui.modal.overlay.classList.add('hidden'), 200);
+        }
+
+        // --- BIND EVENTS & INIT ---
+        document.getElementById('btnStart').onclick = startGame;
+        
+        ui.langBtn.onclick = () => {
+            state.lang = state.lang === 'TH' ? 'EN' : 'TH';
+            localStorage.setItem('ess_lang', state.lang);
+            applyLang();
+        };
+
+        ui.soundBtn.onclick = () => {
+            state.sound = !state.sound;
+            ui.soundBtn.textContent = state.sound ? '🔊' : '🔇';
+            if(state.sound && audioCtx.state === 'suspended') audioCtx.resume();
+        };
+
+        // Initialize UI
+        applyLang();
+        ui.highscore.textContent = state.highScore;
+
+    </script>
+</body>
+</html>
